@@ -2,7 +2,7 @@ import { Application, Assets, Container, Graphics, Rectangle, Sprite, Texture } 
 import "./styles.css";
 import { createTools } from "./tools";
 
-const W=1040,H=560,COLS=8,ROWS=6,TW=112,TH=66,KEY="horta-horizonte-play-v2";
+const W=1040,H=560,COLS=8,ROWS=6,TW=112,TH=66,KEY="colheita-infeliz-play-v1";
 type Cultivo="wheat"|"corn"|"sugarcane"; type Canteiro={crop:Cultivo;plantedAt:number;watered?:boolean}|null; type EstadoJogo={coins:number;cash:number;tilled?:number[];plots:Canteiro[];seeds:Record<Cultivo,number>;fruits:Record<Cultivo,number>};
 const TEMPOS:Record<Cultivo,number>={wheat:8000,corn:18000,sugarcane:28000};
 const criarJogoNovo=():EstadoJogo=>({coins:100,cash:0,plots:Array.from({length:48},()=>null),seeds:{wheat:10,corn:10,sugarcane:10},fruits:{wheat:0,corn:0,sugarcane:0}});
