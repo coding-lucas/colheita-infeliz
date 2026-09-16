@@ -1,0 +1,9 @@
+{
+  "perspective": "isometric-2-to-1",
+  "pivot": "center-bottom-of-soil-patch",
+  "crops": {
+    "wheat": ["wheat_stage_01.png", "wheat_stage_02.png", "wheat_stage_03.png", "wheat_stage_04.png"],
+    "corn": ["corn_stage_01.png", "corn_stage_02.png", "corn_stage_03.png", "corn_stage_04.png"],
+    "sugarcane": ["sugarcane_stage_01.png", "sugarcane_stage_02.png", "sugarcane_stage_03.png", "sugarcane_stage_04.png"]
+  }
+}
