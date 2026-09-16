@@ -37,18 +37,22 @@ export function createTools(controls:HTMLElement,canvas:HTMLCanvasElement,world:
    const points=[[c/8,r/6],[(c+1)/8,r/6],[(c+1)/8,(r+1)/6],[c/8,(r+1)/6]].flatMap(([u,v])=>{const p=ground(u,v);return[p.x,p.y]});
    highlight.poly(points).fill({color:valid?colors[tool]:0xe58a75,alpha:.24}).stroke({color:valid?colors[tool]:0xe58a75,width:2});
  }
- const furrows=new Graphics();furrows.eventMode="none";marks.addChild(furrows);
- const prepared=new Set<number>();
+ // Aqui eu guardo os riscos de cada canteiro separados para poder limpar o solo depois da colheita.
+ const furrows=new Map<number,Graphics>();
  function till(index:number){
-   if(prepared.has(index))return;
-   prepared.add(index);
+   if(furrows.has(index))return;
+   const furrow=new Graphics();furrow.eventMode="none";marks.addChild(furrow);furrows.set(index,furrow);
    const c=index%8,r=Math.floor(index/8);
    for(let line=1;line<=4;line++){
      const a=ground((c+.14)/8,(r+line/5)/6);
      const b=ground((c+.86)/8,(r+line/5)/6);
-     furrows.moveTo(a.x,a.y).lineTo(b.x,b.y).stroke({color:0x57321d,width:3,alpha:.8,cap:"round"});
-     furrows.moveTo(a.x,a.y+2).lineTo(b.x,b.y+2).stroke({color:0xd0a066,width:1,alpha:.65,cap:"round"});
+     furrow.moveTo(a.x,a.y).lineTo(b.x,b.y).stroke({color:0x57321d,width:3,alpha:.8,cap:"round"});
+     furrow.moveTo(a.x,a.y+2).lineTo(b.x,b.y+2).stroke({color:0xd0a066,width:1,alpha:.65,cap:"round"});
    }
+ }
+ function untill(index:number){
+   const furrow=furrows.get(index);if(!furrow)return;
+   marks.removeChild(furrow);furrow.destroy();furrows.delete(index);
  }
  function mark(x:number,y:number,water:boolean){
    const g=new Graphics().ellipse(x,y,23,10).fill({color:water?0x214b52:0x523721,alpha:water?.22:.18});
@@ -73,5 +77,5 @@ export function createTools(controls:HTMLElement,canvas:HTMLCanvasElement,world:
    }});
  }
  function tick(){const now=performance.now();for(let i=animations.length-1;i>=0;i--){const a=animations[i],t=Math.min(1,(now-a.born)/a.duration);a.update(t);if(t===1){a.node.destroy({children:true});animations.splice(i,1)}}}
- return {get tool(){return tool},selectTool(key:Tool){toolbar.querySelector<HTMLButtonElement>(`[data-tool="${key}"]`)!.click()},highlightPlot,harvest,mark,till,tick};
+ return {get tool(){return tool},selectTool(key:Tool){toolbar.querySelector<HTMLButtonElement>(`[data-tool="${key}"]`)!.click()},highlightPlot,harvest,mark,till,untill,tick};
 }
