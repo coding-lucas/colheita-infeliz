@@ -6,7 +6,7 @@ const W=1040,H=560,COLS=8,ROWS=6,TW=112,TH=66,KEY="horta-horizonte-play-v2";
 type Cultivo="wheat"|"corn"|"sugarcane"; type Canteiro={crop:Cultivo;plantedAt:number;watered?:boolean}|null; type EstadoJogo={coins:number;cash:number;tilled?:number[];plots:Canteiro[];seeds:Record<Cultivo,number>;fruits:Record<Cultivo,number>};
 const TEMPOS:Record<Cultivo,number>={wheat:8000,corn:18000,sugarcane:28000};
 const criarJogoNovo=():EstadoJogo=>({coins:100,cash:0,plots:Array.from({length:48},()=>null),seeds:{wheat:10,corn:10,sugarcane:10},fruits:{wheat:0,corn:0,sugarcane:0}});
-const carregarJogo=():EstadoJogo=>{try{const x=JSON.parse(localStorage.getItem(KEY)||"null");if(x?.plots?.length!==48)return criarJogoNovo();if(typeof x.seeds!=="object"||!x.seeds)x.seeds={wheat:10,corn:10,sugarcane:10};x.coins=Number.isFinite(x.coins)?Math.max(0,x.coins):100;x.cash=Number.isFinite(x.cash)?Math.max(0,x.cash):Number.isFinite(x.sketch)?Math.max(0,x.sketch):0;delete x.sketch;localStorage.setItem(KEY,JSON.stringify(x));return x}catch{return criarJogoNovo()}};
+const carregarJogo=():EstadoJogo=>{try{const x=JSON.parse(localStorage.getItem(KEY)||"null");if(x?.plots?.length!==48)return criarJogoNovo();if(typeof x.seeds!=="object"||!x.seeds)x.seeds={wheat:10,corn:10,sugarcane:10};x.coins=Number.isFinite(x.coins)?Math.max(0,x.coins):100;x.cash=Number.isFinite(x.cash)?Math.max(0,x.cash):0;localStorage.setItem(KEY,JSON.stringify(x));return x}catch{return criarJogoNovo()}};
 // Aqui eu transformo a posição de cada canteiro nas coordenadas do terreno.
 const mapearTerreno = (u:number,v:number) => ({
   x:520+340*u-340*v,
