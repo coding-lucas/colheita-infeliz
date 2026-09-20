@@ -1,53 +1,57 @@
-import { Application, Assets, Container, Graphics, Rectangle, Sprite, Texture } from "pixi.js";
+import { Application, Assets, Container, Rectangle, Sprite, Texture } from "pixi.js";
 import "./styles.css";
 import { createTools } from "./tools";
+import { criarPedido, ECONOMIA, PEDIDOS_INICIAIS, type Cultivo, type Pedido } from "./economia";
+import { COLUNAS as COLS, criarTerreno, encontrarCanteiro, posicaoCanteiro } from "./terreno";
 
-const W=1040,H=560,COLS=8,ROWS=6,TW=112,TH=66,KEY="colheita-infeliz-play-v3";
-type Cultivo="wheat"|"corn"|"sugarcane"; type Canteiro={crop:Cultivo;plantedAt:number;watered?:boolean}|null; type EstadoJogo={coins:number;cash:number;tilled?:number[];plots:Canteiro[];seeds:Record<Cultivo,number>;fruits:Record<Cultivo,number>};
-const TEMPOS:Record<Cultivo,number>={wheat:8000,corn:18000,sugarcane:28000};
+const KEY="colheita-infeliz-play-v8";
+type Canteiro={crop:Cultivo;plantedAt:number;watered?:boolean}|null; type EstadoJogo={coins:number;cash:number;tilled?:number[];plots:Canteiro[];seeds:Record<Cultivo,number>;fruits:Record<Cultivo,number>;orders:Pedido[];nextOrderId:number};
+const TEMPOS:Record<Cultivo,number>={wheat:ECONOMIA.wheat.tempo,corn:ECONOMIA.corn.tempo,sugarcane:ECONOMIA.sugarcane.tempo};
 const PRECO_MOEDAS=20,PRECO_CASH=5;
-const criarJogoNovo=():EstadoJogo=>({coins:100,cash:100,tilled:[],plots:Array.from({length:48},()=>null),seeds:{wheat:0,corn:0,sugarcane:0},fruits:{wheat:0,corn:0,sugarcane:0}});
-const carregarJogo=():EstadoJogo=>{try{const x=JSON.parse(localStorage.getItem(KEY)||"null");if(x?.plots?.length!==48)return criarJogoNovo();if(typeof x.seeds!=="object"||!x.seeds)x.seeds={wheat:0,corn:0,sugarcane:0};x.coins=Number.isFinite(x.coins)?Math.max(0,x.coins):100;x.cash=Number.isFinite(x.cash)?Math.max(0,x.cash):100;localStorage.setItem(KEY,JSON.stringify(x));return x}catch{return criarJogoNovo()}};
-// Aqui eu transformo a posição de cada canteiro nas coordenadas do terreno.
-const mapearTerreno = (u:number,v:number) => ({
-  x:520+340*u-340*v,
-  y:148+151*u+140*v+10*u*v
-});
-const posicaoCanteiro=(c:number,r:number)=>mapearTerreno((c+.5)/COLS,(r+.5)/ROWS);
-const encontrarCanteiro=(x:number,y:number)=>{
-  let u=.5,v=.5;
-  for(let step=0;step<8;step++){
-    const p=mapearTerreno(u,v),dx=x-p.x,dy=y-p.y;
-    const yu=151+10*v,yv=140+10*u,det=340*(yu+yv);
-    u+=(yv*dx+340*dy)/det;v+=(-yu*dx+340*dy)/det;
-  }
-  if(u<0||u>=1||v<0||v>=1)return null;
-  return Math.floor(v*ROWS)*COLS+Math.floor(u*COLS);
-};
+const criarJogoNovo=():EstadoJogo=>({coins:100,cash:100,tilled:[],plots:Array.from({length:48},()=>null),seeds:{wheat:0,corn:0,sugarcane:0},fruits:{wheat:0,corn:0,sugarcane:0},orders:PEDIDOS_INICIAIS.map(p=>({...p})),nextOrderId:4});
+const carregarJogo=():EstadoJogo=>{try{const x=JSON.parse(localStorage.getItem(KEY)||"null");if(x?.plots?.length!==48)return criarJogoNovo();if(typeof x.seeds!=="object"||!x.seeds)x.seeds={wheat:0,corn:0,sugarcane:0};if(typeof x.fruits!=="object"||!x.fruits)x.fruits={wheat:0,corn:0,sugarcane:0};if(!Array.isArray(x.orders))x.orders=PEDIDOS_INICIAIS.map(p=>({...p}));x.nextOrderId=Number.isFinite(x.nextOrderId)?x.nextOrderId:4;x.coins=Number.isFinite(x.coins)?Math.max(0,x.coins):100;x.cash=Number.isFinite(x.cash)?Math.max(0,x.cash):100;localStorage.setItem(KEY,JSON.stringify(x));return x}catch{return criarJogoNovo()}};
 const estagioCrescimento=(p:Canteiro,n:number)=>{
   if(!p)return 0;
   const elapsed=Math.max(0,n-p.plantedAt),duration=TEMPOS[p.crop];
   if(elapsed>=duration)return 4;
   return elapsed<duration/3?1:elapsed<duration*2/3?2:3;
 };
-function recortarQuadro(src:Texture,cell:number,i:number){return new Texture({source:src.source,frame:new Rectangle(i*cell,0,cell,src.height)})}
-async function start(){const root=document.querySelector<HTMLDivElement>("#root")!;const app=new Application();await app.init({resizeTo:root,background:"#0a2932",antialias:true,autoDensity:true});root.appendChild(app.canvas);const world=new Container();app.stage.addChild(world);const fit=()=>{const s=Math.max(app.screen.width/W,app.screen.height/H);world.scale.set(s);world.position.set((app.screen.width-W*s)/2,(app.screen.height-H*s)/2)};app.renderer.on("resize",fit);fit();const bgTex=await Assets.load<Texture>("/assets/cenario/fazenda.png");const bg=new Sprite(bgTex);bg.width=W;bg.height=H;world.addChild(bg);const sheets={wheat:await Assets.load<Texture>("/assets/plantas/trigo.png"),corn:await Assets.load<Texture>("/assets/plantas/milho.png"),sugarcane:await Assets.load<Texture>("/assets/plantas/cana.png")};const plots=new Container();plots.eventMode="static";plots.hitArea=new Rectangle(0,0,W,H);world.addChild(plots);let jogo=carregarJogo(),now=Date.now(),selected:Cultivo="wheat",hover=-1;
-const names:Record<Cultivo,string>={wheat:"Trigo",corn:"Milho",sugarcane:"Cana"};
+async function start(){
+const root=document.querySelector<HTMLDivElement>("#root")!;
+const app=new Application();
+await app.init({resizeTo:root,background:"#849447",antialias:true,autoDensity:true,resolution:Math.min(window.devicePixelRatio,2)});
+root.appendChild(app.canvas);
+const bg=new Sprite(await Assets.load<Texture>("/assets/cenario/fazenda-isometrica-v3.png"));
+const world=new Container();app.stage.addChild(bg,world);
+const fit=()=>{
+  // Aqui eu preencho a tela com o cenário e reservo espaço para as ferramentas abaixo da horta.
+  const fundoEscala=Math.max(app.screen.width/bg.texture.width,app.screen.height/bg.texture.height);
+  bg.scale.set(fundoEscala);bg.position.set((app.screen.width-bg.width)/2,(app.screen.height-bg.height)/2);
+  const alturaLivre=Math.max(180,app.screen.height-118);
+  const escala=Math.min((app.screen.width-30)/740,alturaLivre/480,1.8);
+  world.scale.set(escala);world.position.set(app.screen.width/2-520*escala,alturaLivre/2+24-300*escala);
+};
+app.renderer.on("resize",fit);fit();
+const terreno=await criarTerreno(world);
+const plots=new Container();plots.eventMode="static";plots.hitArea=new Rectangle(-2000,-2000,5000,5000);world.addChild(plots);
+let jogo=carregarJogo(),now=Date.now(),selected:Cultivo="wheat",hover=-1;
+const names:Record<Cultivo,string>={wheat:ECONOMIA.wheat.nome,corn:ECONOMIA.corn.nome,sugarcane:ECONOMIA.sugarcane.nome};
 const crops:Cultivo[]=["wheat","corn","sugarcane"];
 const controls=document.createElement("aside");controls.className="controls";
 controls.innerHTML='<p id="notice" role="status">Abra o inventário e escolha uma semente.</p>';
 root.appendChild(controls);
 const notice=controls.querySelector("#notice")!;
+const menuDock=document.createElement("nav");menuDock.className="menu-dock";menuDock.setAttribute("aria-label","Menu da fazenda");root.appendChild(menuDock);
 const inventoryButton=document.createElement("button");inventoryButton.className="inventory-toggle";
 inventoryButton.setAttribute("aria-label","Abrir inventário");inventoryButton.setAttribute("aria-expanded","false");inventoryButton.setAttribute("aria-controls","inventory");
 inventoryButton.innerHTML='<span class="item-sprite crate" aria-hidden="true"></span><span class="button-label">Inventário</span>';
-root.appendChild(inventoryButton);
+menuDock.appendChild(inventoryButton);
 const inventory=document.createElement("section");inventory.id="inventory";inventory.className="inventory";inventory.hidden=true;
 inventory.setAttribute("aria-label","Inventário da fazenda");
 inventory.innerHTML='<header><div><span class="eyebrow">SEU ESTOQUE</span><h2>Inventário</h2></div><button class="inventory-close" aria-label="Fechar inventário">×</button></header><div class="inventory-tabs" role="group" aria-label="Categorias"><button data-category="seeds" aria-pressed="true">Sementes</button><button data-category="harvest" aria-pressed="false">Colheita</button></div><p class="inventory-hint">Escolha uma semente para plantar.</p><div class="seed-slots"></div><div class="harvest-slots" hidden></div><footer>Progresso salvo automaticamente</footer>';
 root.appendChild(inventory);
 function toggleInventory(open:boolean){inventory.hidden=!open;inventoryButton.setAttribute("aria-expanded",String(open));if(open)(inventory.querySelector('[data-category][aria-pressed="true"]') as HTMLButtonElement)?.focus();else inventoryButton.focus()}
-inventoryButton.onclick=()=>{fecharLoja();toggleInventory(inventory.hidden)};
+inventoryButton.onclick=()=>{fecharLoja();fecharCeleiro();toggleInventory(inventory.hidden)};
 inventory.querySelector(".inventory-close")!.addEventListener("click",()=>toggleInventory(false));
 inventory.addEventListener("keydown",e=>{if(e.key==="Escape")toggleInventory(false)});
 const slots=inventory.querySelector(".seed-slots")!;
@@ -70,11 +74,11 @@ for(const crop of crops){
 }
 const saldo=document.createElement("div");saldo.className="wallet";
 saldo.innerHTML='<div><span class="coin-icon" aria-hidden="true"></span><span>Moedas<b id="coin-balance"></b></span></div><div><span class="banknote" aria-hidden="true">$</span><span>Cash<b id="cash-balance"></b></span></div>';root.appendChild(saldo);
-const botaoLoja=document.createElement("button");botaoLoja.className="inventory-toggle shop-toggle";botaoLoja.setAttribute("aria-label","Abrir loja");botaoLoja.setAttribute("aria-expanded","false");botaoLoja.innerHTML='<span class="item-sprite shop-icon" aria-hidden="true"></span><span class="button-label">Loja</span>';root.appendChild(botaoLoja);
+const botaoLoja=document.createElement("button");botaoLoja.className="inventory-toggle shop-toggle";botaoLoja.setAttribute("aria-label","Abrir loja");botaoLoja.setAttribute("aria-expanded","false");botaoLoja.innerHTML='<span class="item-sprite shop-icon" aria-hidden="true"></span><span class="button-label">Loja</span>';menuDock.appendChild(botaoLoja);
 const loja=document.createElement("section");loja.className="inventory shop";loja.hidden=true;loja.setAttribute("aria-label","Loja de sementes");
 loja.innerHTML='<header><h2>Loja de sementes</h2><button class="inventory-close" aria-label="Fechar loja">×</button></header><p>Escolha como pagar. O preço em Cash é menor.</p><div class="shop-items"></div><p class="shop-status" role="status"></p>';root.appendChild(loja);
 function fecharLoja(){loja.hidden=true;botaoLoja.setAttribute("aria-expanded","false")}
-botaoLoja.onclick=()=>{const abrir=loja.hidden;loja.hidden=!abrir;botaoLoja.setAttribute("aria-expanded",String(abrir));if(abrir){inventory.hidden=true;inventoryButton.setAttribute("aria-expanded","false")}};
+botaoLoja.onclick=()=>{const abrir=loja.hidden;loja.hidden=!abrir;botaoLoja.setAttribute("aria-expanded",String(abrir));if(abrir){fecharCeleiro();inventory.hidden=true;inventoryButton.setAttribute("aria-expanded","false")}};
 loja.querySelector(".inventory-close")!.addEventListener("click",fecharLoja);
 for(const crop of crops){
  const card=document.createElement("div");card.className="harvest-slot";
@@ -92,6 +96,49 @@ for(const crop of crops){
  });
  loja.querySelector(".shop-items")!.appendChild(card);
 }
+const botaoCeleiro=document.createElement("button");botaoCeleiro.className="inventory-toggle barn-toggle";botaoCeleiro.setAttribute("aria-label","Abrir celeiro");botaoCeleiro.setAttribute("aria-expanded","false");botaoCeleiro.innerHTML='<span class="item-sprite barn-icon" aria-hidden="true"></span><span class="button-label">Celeiro</span>';menuDock.appendChild(botaoCeleiro);
+const celeiro=document.createElement("section");celeiro.className="inventory barn";celeiro.hidden=true;celeiro.setAttribute("aria-label","Celeiro e pedidos");
+celeiro.innerHTML='<header><div><span class="eyebrow">ECONOMIA DA FAZENDA</span><h2>Celeiro</h2></div><button class="inventory-close" aria-label="Fechar celeiro">×</button></header><div class="inventory-tabs barn-tabs" role="group" aria-label="Áreas do celeiro"><button data-barn-category="sell" aria-pressed="true">Vender</button><button data-barn-category="orders" aria-pressed="false">Pedidos</button></div><p class="barn-hint">Venda sua colheita diretamente por moedas.</p><div class="sell-items"></div><p class="empty-sale" hidden>Seu celeiro está vazio. Colha alguma plantação para começar a vender.</p><div class="order-items" hidden></div><p class="barn-status" role="status"></p>';
+root.appendChild(celeiro);
+function fecharCeleiro(){celeiro.hidden=true;botaoCeleiro.setAttribute("aria-expanded","false")}
+botaoCeleiro.onclick=()=>{const abrir=celeiro.hidden;celeiro.hidden=!abrir;botaoCeleiro.setAttribute("aria-expanded",String(abrir));if(abrir){fecharLoja();inventory.hidden=true;inventoryButton.setAttribute("aria-expanded","false")}};
+celeiro.querySelector(".inventory-close")!.addEventListener("click",fecharCeleiro);
+celeiro.addEventListener("keydown",e=>{if(e.key==="Escape")fecharCeleiro()});
+const itensVenda=celeiro.querySelector(".sell-items")!;
+const avisoCeleiroVazio=celeiro.querySelector<HTMLElement>(".empty-sale")!;
+const listaPedidos=celeiro.querySelector(".order-items")!;
+celeiro.querySelectorAll<HTMLButtonElement>("[data-barn-category]").forEach(button=>button.onclick=()=>{
+ const vender=button.dataset.barnCategory==="sell";
+ (itensVenda as HTMLElement).hidden=!vender;(listaPedidos as HTMLElement).hidden=vender;
+ celeiro.querySelector(".barn-hint")!.textContent=vender?"Venda sua colheita diretamente por moedas.":"Pedidos pagam melhor. Alguns também recompensam Cash.";
+ celeiro.querySelectorAll("[data-barn-category]").forEach(tab=>tab.setAttribute("aria-pressed",String(tab===button)));
+});
+for(const crop of crops){
+ const card=document.createElement("div");card.className="sell-card";card.dataset.crop=crop;
+ card.innerHTML=`<span class="item-sprite ${crop}" aria-hidden="true"></span><div class="sell-info"><strong>${names[crop]}</strong><small>${ECONOMIA[crop].precoVenda} moedas por unidade</small><b class="stock"></b></div><div class="sell-actions"><button data-sell="one">Vender 1</button><button data-sell="all">Vender tudo</button></div>`;
+ card.querySelectorAll<HTMLButtonElement>("[data-sell]").forEach(button=>button.onclick=()=>{
+  const quantidade=button.dataset.sell==="all"?jogo.fruits[crop]:Math.min(1,jogo.fruits[crop]);
+  if(quantidade<=0){celeiro.querySelector(".barn-status")!.textContent=`Você não tem ${names[crop].toLowerCase()} para vender.`;return}
+  const recebido=quantidade*ECONOMIA[crop].precoVenda;jogo.fruits[crop]-=quantidade;jogo.coins+=recebido;
+  localStorage.setItem(KEY,JSON.stringify(jogo));sync();celeiro.querySelector(".barn-status")!.textContent=`${quantidade}× ${names[crop].toLowerCase()} vendido por ${recebido} moedas.`;
+ });
+ itensVenda.appendChild(card);
+}
+function desenharPedidos(){
+ listaPedidos.innerHTML="";
+ for(const pedido of jogo.orders){
+  const card=document.createElement("article");card.className="order-card";
+  const disponivel=jogo.fruits[pedido.crop],completo=disponivel>=pedido.quantity;
+  card.innerHTML=`<span class="item-sprite ${pedido.crop}" aria-hidden="true"></span><div><strong>Pedido de ${names[pedido.crop]}</strong><small>Entregue ${pedido.quantity} unidades</small><span class="order-progress">${Math.min(disponivel,pedido.quantity)}/${pedido.quantity}</span></div><button ${completo?"":"disabled"}>Entregar · ${pedido.rewardCoins} moedas${pedido.rewardCash?` + ${pedido.rewardCash} Cash`:""}</button>`;
+  card.querySelector("button")!.onclick=()=>{
+   if(jogo.fruits[pedido.crop]<pedido.quantity)return;
+   jogo.fruits[pedido.crop]-=pedido.quantity;jogo.coins+=pedido.rewardCoins;jogo.cash+=pedido.rewardCash;
+   jogo.orders=jogo.orders.filter(item=>item.id!==pedido.id);jogo.orders.push(criarPedido(jogo.nextOrderId++));
+   localStorage.setItem(KEY,JSON.stringify(jogo));sync();celeiro.querySelector(".barn-status")!.textContent=`Pedido entregue: +${pedido.rewardCoins} moedas${pedido.rewardCash?` e +${pedido.rewardCash} Cash`:""}.`;
+  };
+  listaPedidos.appendChild(card);
+ }
+}
 const sync=()=>{
  saldo.querySelector("#coin-balance")!.textContent=String(jogo.coins);
  saldo.querySelector("#cash-balance")!.textContent=String(jogo.cash);
@@ -105,47 +152,28 @@ const sync=()=>{
   button.disabled=jogo.seeds[crop]<=0;button.setAttribute("aria-pressed",String(selected===crop));
   button.setAttribute("aria-label",`Semente de ${names[crop]}, ${jogo.seeds[crop]} unidades`);
   button.querySelector(".quantity")!.textContent=jogo.seeds[crop]+"×";
+  const venda=itensVenda.querySelector<HTMLElement>(`[data-crop="${crop}"]`)!;
+  venda.hidden=jogo.fruits[crop]<=0;
+  venda.querySelector(".stock")!.textContent=`No estoque: ${jogo.fruits[crop]}×`;
+  venda.querySelectorAll<HTMLButtonElement>("button").forEach(botao=>botao.disabled=jogo.fruits[crop]<=0);
+  const botaoTudo=venda.querySelector<HTMLButtonElement>('[data-sell="all"]')!;
+  botaoTudo.textContent=jogo.fruits[crop]>0?`Vender tudo · +${jogo.fruits[crop]*ECONOMIA[crop].precoVenda}`:"Vender tudo";
  }
-
+ avisoCeleiroVazio.hidden=crops.some(crop=>jogo.fruits[crop]>0);
+ desenharPedidos();
 };
 
-// Aqui eu reaproveito as texturas para o jogo continuar leve durante a animação.
-plots.sortableChildren=true;
-const textures={} as Record<Cultivo,Texture[]>;
-for(const crop of ["wheat","corn","sugarcane"] as Cultivo[]){
-  textures[crop]=[0,1,3].map(index=>recortarQuadro(sheets[crop],crop==="wheat"?512:543,index));
-}
-const views=jogo.plots.map((_,i)=>{
-  const q=posicaoCanteiro(i%COLS,Math.floor(i/COLS));
-  const holder=new Container(); holder.position.set(q.x,q.y);holder.zIndex=q.y;
-  holder.eventMode="none";
-  const seed=new Graphics().ellipse(-3,0,3,1.8).fill(0xdca550).ellipse(3,2,2.5,1.5).fill(0xb88139);
-  const plant=new Sprite(Texture.EMPTY);plant.visible=false;
-  holder.addChild(seed,plant);plots.addChild(holder);
-  return {holder,seed,plant,last:""};
-});
+const tilled=new Set<number>(jogo.tilled??[]);
+// Aqui eu mantenho os plantios antigos com o solo já preparado.
+jogo.plots.forEach((plot,index)=>{if(plot)tilled.add(index)});
+jogo.tilled=[...tilled];
 const draw=()=>{
   jogo.plots.forEach((p,i)=>{
-    const view=views[i],st=estagioCrescimento(p,now),signature=p?p.crop+st:"empty";
-    if(view.last===signature)return;
-    view.last=signature;view.holder.visible=!!p;
-    if(!p)return;
-    view.seed.visible=st===1;view.plant.visible=st>1;
-    if(st>1){
-      view.plant.texture=textures[p.crop][st-2];
-      // Aqui eu apoio a planta no centro do canteiro para ela não parecer flutuando.
-      view.plant.anchor.set(.5,p.crop==="wheat"?.77:.80);
-      view.plant.scale.set(.12);
-    }
+    terreno.atualizar(i,{arado:tilled.has(i),cultivo:p?.crop,estagio:estagioCrescimento(p,now),regado:p?.watered});
   });
 };
 
-const tools=createTools(controls,app.canvas,world,mapearTerreno,textures);
-const tilled=new Set<number>(jogo.tilled??[]);
- // Aqui eu mantenho os plantios antigos com o solo já preparado.
- jogo.plots.forEach((plot,index)=>{if(plot)tilled.add(index)});
- tilled.forEach(index=>tools.till(index));
- jogo.tilled=[...tilled];
+const tools=createTools(controls,app.canvas,world,terreno.texturasPlantas,terreno.indicadores);
 let selectedPlot=-1;
 function describe(index:number){
   if(index<0){tools.highlightPlot(-1,false,"Passe sobre a terra para selecionar um canteiro.");return}
@@ -158,11 +186,12 @@ function executarAcao(i:number){
   hover=i;selectedPlot=i;const p=jogo.plots[i],st=estagioCrescimento(p,Date.now()),center=posicaoCanteiro(i%COLS,Math.floor(i/COLS));
   if(tools.tool==="harvest"){
     if(p&&st===4){
-      tools.harvest(p.crop,center.x,center.y);jogo.plots[i]=null;jogo.fruits[p.crop]++;
+      const quantidade=ECONOMIA[p.crop].quantidadeColhida;
+      tools.harvest(p.crop,center.x,center.y,quantidade);jogo.plots[i]=null;jogo.fruits[p.crop]+=quantidade;
       // Aqui eu devolvo o canteiro para terra fofa, obrigando um novo preparo antes de plantar.
-      tilled.delete(i);tools.untill(i);
+      tilled.delete(i);
       const bonus=Math.random()<.30;if(bonus)jogo.seeds[p.crop]+=2;
-      notice.textContent="Colheita adicionada ao inventário."+(bonus?" Você ganhou 2 sementes!":"");
+      notice.textContent=`${quantidade} unidades de ${names[p.crop].toLowerCase()} adicionadas ao inventário.`+(bonus?" Você ganhou 2 sementes!":"");
     }else notice.textContent=p?"Aguarde a planta amadurecer.":"Não há planta para colher.";
   }else if(tools.tool==="plant"){
     if(!p&&tilled.has(i)&&jogo.seeds[selected]>0){jogo.plots[i]={crop:selected,plantedAt:Date.now()};jogo.seeds[selected]--;notice.textContent="Semente plantada na terra."}
@@ -170,7 +199,7 @@ function executarAcao(i:number){
   }else if(tools.tool==="till"){
     if(tilled.has(i))notice.textContent="Este canteiro já está arado. Não precisa arar novamente.";
     else if(p)notice.textContent="Colha antes de arar este canteiro.";
-    else{tilled.add(i);tools.till(i);notice.textContent="Terra arada e pronta para plantar."}
+    else{tilled.add(i);notice.textContent="Terra arada e pronta para plantar."}
   }else{
     if(!p)notice.textContent="Plante antes de regar.";
     else if(st===4)notice.textContent="Esta planta já está pronta para colher.";
@@ -207,6 +236,6 @@ window.addEventListener("pointerup",pararArraste);
 window.addEventListener("pointercancel",pararArraste);
 window.addEventListener("blur",pararArraste);
 app.canvas.style.touchAction="none";
-app.ticker.add(()=>{now=Date.now();draw();tools.tick();if(hover>=0)describe(hover)});sync()
+app.ticker.add(()=>{now=Date.now();draw();terreno.animar(performance.now());tools.tick();if(hover>=0)describe(hover)});sync()
 }
-start();
+start().catch(erro=>{console.error("Não foi possível carregar a fazenda.",erro);document.querySelector("#root")!.insertAdjacentHTML("beforeend",'<p role="alert">Não foi possível carregar a fazenda. Atualize a página para tentar novamente.</p>')});
